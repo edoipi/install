@@ -1,0 +1,5 @@
+[package]
+
+name = "install"
+version = "0.0.1"
+authors = ["edoipi <implicent@gmail.com>"]
