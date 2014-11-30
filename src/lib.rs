@@ -1,28 +1,22 @@
 #![crate_name = "install"]
 #![feature(macro_rules)]
 #![feature(phase)]
-#![allow(unused_variables)] //temporary 
-#![allow(unused_imports)] // this one as well
 
-extern crate getopts;
 extern crate collections;
-extern crate rustc;
+extern crate getopts;
 #[phase(plugin, link)] extern crate log;
-use rustc::util::fs::realpath;
-use std::io::{
-    fs,
-    FileType,
-};
-use std::os;
-use std::str;
-use collections::vec::Vec;
+extern crate rustc;
+
+use std::collections::HashSet;
 use collections::string::String;
+use collections::vec::Vec;
 use getopts::{
     getopts,
     optflag,
     optopt,
-    //usage,
 };
+use rustc::util::fs::realpath;
+use std::io::fs;
 
 pub fn uumain(args: Vec<String>) -> int {
     //let args = os::args();
@@ -82,7 +76,7 @@ pub fn uumain(args: Vec<String>) -> int {
     
     let is_dest_dir = match fs::stat(&dest) {
         Ok(m) => m.kind == std::io::FileType::TypeDirectory,
-        Err(e) => false
+        Err(_) => false
     };
     
     if matches.opt_present("target-directory") || sources.len()>1  || is_dest_dir {
@@ -113,7 +107,7 @@ fn file_to_file(source : Path, dest : Path) {
         panic!()
     }
     
-    let outcome = match fs::copy(&source, &dest) {
+    match fs::copy(&source, &dest) {
         Ok(m) => m,
         Err(e) => {
             error!("error: {}", e);
@@ -128,14 +122,16 @@ fn files_to_directory(sources : Vec<Path>, dest : Path) {
                 error!("failed to access ‘{}’: No such file or directory", dest.display());
                 panic!()
             },
-        Err(e) => {
+        Err(_) => {
             error!("target ‘{}’ is not a directory", dest.display());
             panic!()
         }
     };
-
+    
+    let mut set = HashSet::new();
+    
     for i in range (0, sources.len()) {
-        let stat = fs::stat(&sources[i]);
+        let mut stat = fs::stat(&sources[i]);
         if stat.is_ok() && stat.unwrap().kind == std::io::FileType::TypeDirectory {
             println!("install: omitting directory ‘{}’", sources[i].display());
             continue;
@@ -148,8 +144,31 @@ fn files_to_directory(sources : Vec<Path>, dest : Path) {
                 panic!()
             },
         });
-        let outcome = match fs::copy(&sources[i], &tmp_dest) {
+        
+        stat = fs::stat(&tmp_dest);
+        if stat.is_ok() && stat.unwrap().kind == std::io::FileType::TypeDirectory {
+            println!("install: cannot overwrite directory ‘{}’ with non-directory", tmp_dest.display());
+            continue;
+        }
+        
+        let real_dest = match realpath(&tmp_dest) {
             Ok(m) => m,
+            Err(e) => {
+                error!("error: {}", e);
+                panic!()
+            },
+        };
+        
+        if set.contains(&real_dest){
+            println!("install: will not overwrite just-created ‘{}’ with ‘{}’", tmp_dest.display(), sources[i].display());
+            continue;
+        }
+        
+        match fs::copy(&sources[i], &tmp_dest) {
+            Ok(m) => {
+                set.insert(real_dest);
+                m
+                },
             Err(e) => {
                 error!("error: {}", e);
                 panic!()
