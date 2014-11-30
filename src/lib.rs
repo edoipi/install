@@ -44,13 +44,7 @@ pub fn uumain(args: Vec<String>) -> int {
     
     let dest : Path = if matches.opt_present("target-directory") {
         match matches.opt_str("t") {
-            Some(x) => Path::new(x)/*match realpath(&Path::new(x)) {
-                    Ok(m) => m,
-                    Err(e) => {
-                        error!("error: {}", e);
-                        panic!()
-                    },
-                }*/,
+            Some(x) => Path::new(x),
             None => {
                 error!("error: Missing TARGET argument. Try --help.");
                 panic!()
@@ -64,13 +58,6 @@ pub fn uumain(args: Vec<String>) -> int {
             },
             _ => {
                 let tmp = free.pop();
-                /*match realpath(&Path::new(tmp.unwrap())) {
-                    Ok(m) => m,
-                    Err(e) => {
-                        error!("error: {}", e);
-                        panic!()
-                    },
-                }*/
                 Path::new(tmp.unwrap())
             }
         }
@@ -87,13 +74,7 @@ pub fn uumain(args: Vec<String>) -> int {
                     error!("cannot stat ‘{}’: No such file or directory", free[i]);
                     panic!()
                 }
-                tmp.push( Path::new(free[i].clone()) /*match realpath(&Path::new(free[i].clone())) {
-                    Ok(m) => m,
-                    Err(e) => {
-                        error!("error: {}", e);
-                        panic!()
-                    },
-                }*/);
+                tmp.push( Path::new(free[i].clone()) );
             }
             tmp
         }
@@ -127,7 +108,7 @@ fn file_to_file(source : Path, dest : Path) {
             panic!()
         },
     };
-    if source==dest {
+    if real_source==real_dest {
         error!("error: {0} and {1} are the same file", source.display(), dest.display());
         panic!()
     }
