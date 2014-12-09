@@ -2,12 +2,20 @@
 #![feature(macro_rules)]
 #![feature(phase)]
 
+#![allow(unused_variables)]  // only necessary while the TODOs still exist
+#![allow(unused_imports)]  // only necessary while the TODOs still exist
+
 extern crate collections;
 extern crate getopts;
 #[phase(plugin, link)] extern crate log;
+extern crate regex;
+#[phase(plugin)] extern crate regex_macros;
 extern crate rustc;
 
+use std::iter::range_step;
+use std::fmt;
 use std::collections::HashSet;
+use std::collections::HashMap;
 use collections::string::String;
 use collections::vec::Vec;
 use getopts::{
@@ -15,8 +23,90 @@ use getopts::{
     optflag,
     optopt,
 };
+use regex::Regex;
 use rustc::util::fs::realpath;
-use std::io::fs;
+use std::io::{
+    fs,
+    FilePermission,
+    GROUP_EXECUTE,
+    GROUP_READ,
+    GROUP_RWX,
+    GROUP_WRITE,
+    OTHER_EXECUTE,
+    OTHER_READ,
+    OTHER_RWX,
+    OTHER_WRITE,
+    USER_EXECUTE,
+    USER_READ,
+    USER_RWX,
+    USER_WRITE,
+};
+
+bitflags! {
+    flags User: u32 {
+        const OWNER = 0x00000001,
+        const GROUP = 0x00000010,
+        const OTHER = 0x00000100,
+    }
+}
+
+bitflags! {
+    flags Permission: u32 {
+        const READ    = 0x00000001,
+        const WRITE   = 0x00000010,
+        const EXECUTE = 0x00000100,
+    }
+}
+
+fn decode(f: FilePermission) {
+    let mut map = HashMap::new();
+    map.insert(GROUP_EXECUTE, "GROUP_EXECUTE");
+    map.insert(GROUP_READ, "GROUP_READ");
+    map.insert(GROUP_WRITE, "GROUP_WRITE");
+    map.insert(OTHER_EXECUTE, "OTHER_EXECUTE");
+    map.insert(OTHER_READ, "OTHER_READ");
+    map.insert(OTHER_WRITE, "OTHER_WRITE");
+    map.insert(USER_EXECUTE, "USER_EXECUTE");
+    map.insert(USER_READ, "USER_READ");
+    map.insert(USER_WRITE, "USER_WRITE");
+    for &p in [GROUP_EXECUTE,
+                GROUP_READ,
+                GROUP_WRITE,
+                OTHER_EXECUTE,
+                OTHER_READ,
+                OTHER_WRITE,
+                USER_EXECUTE,
+                USER_READ,
+                USER_WRITE].iter() {
+        if f & p != FilePermission::empty() {
+            print!("{} ", map.get(&p).unwrap());
+        }
+    }
+}
+
+enum Type {
+    Add,
+    Remove,
+    Set,
+}
+
+struct Action {
+    t: Type,
+    p: FilePermission,
+}
+
+impl Action {
+    fn apply_on(&self, p: &mut FilePermission) {
+        match self.t {
+            Add => p.insert(self.p),
+            Remove => p.remove(self.p),
+            Set => {
+                p.remove(FilePermission::all());
+                p.insert(self.p)
+            },
+        }
+    }
+}
 
 pub fn uumain(args: Vec<String>) -> int {
     //let args = os::args();
@@ -25,6 +115,7 @@ pub fn uumain(args: Vec<String>) -> int {
         optflag("h", "help", "display this help and exit"),
         optflag("v", "version", "output version information and exit"),
         optopt("t", "target-directory", "Specify the destination directory", ""),
+        optopt("m", "mode", "Set the file mode bits for the installed file or directory to mode", ""),
     ];
     let matches = match getopts(args.tail(), opts) {
         Ok(m) => m,
@@ -36,25 +127,32 @@ pub fn uumain(args: Vec<String>) -> int {
     
     let mut free = matches.free.clone();
     
-    let dest : Path = if matches.opt_present("target-directory") {
-        match matches.opt_str("t") {
-            Some(x) => Path::new(x),
-            None => {
-                error!("error: Missing TARGET argument. Try --help.");
-                panic!()
-            },
-        }
-    } else {
-        match free.len() {
-            0...1 => {
-                error!("error: Missing TARGET argument. Try --help.");
-                panic!()
-            },
-            _ => {
-                let tmp = free.pop();
-                Path::new(tmp.unwrap())
+    let mode = match matches.opt_str("mode") {
+        Some(x) => parse_mode(x),
+        None => {
+            Vec::new()
+        },
+    };
+    /*for m in mode.iter() {
+        decode(m.p);
+        println!("");
+    }
+    return 0;*/
+    
+    let dest : Path = match matches.opt_str("target-directory") {
+        Some(x) => Path::new(x),
+        None => {
+            match free.len() {
+                0...1 => {
+                    error!("error: Missing TARGET argument. Try --help.");
+                    panic!()
+                },
+                _ => {
+                    let tmp = free.pop();
+                    Path::new(tmp.unwrap())
+                }
             }
-        }
+        },
     };
     let sources : Vec<Path> = match free.len() {
         0 => {
@@ -82,12 +180,12 @@ pub fn uumain(args: Vec<String>) -> int {
     if matches.opt_present("target-directory") || sources.len()>1  || is_dest_dir {
         files_to_directory(sources, dest);
     } else {
-        file_to_file(sources[0].clone(), dest);
+        file_to_file(sources[0].clone(), dest, mode);
     }
     0
 }
 
-fn file_to_file(source : Path, dest : Path) {
+fn file_to_file(source: Path, dest: Path, mode: Vec<Action>) {
     let real_source = match realpath(&source) {
         Ok(m) => m,
         Err(e) => {
@@ -113,7 +211,26 @@ fn file_to_file(source : Path, dest : Path) {
             error!("error: {}", e);
             panic!()
         },
+    }
+    
+    let mut current_perm = match fs::stat(&dest) {
+        Ok(stat) => stat.perm,
+        Err(e) => {error!("error: {}", e);
+            panic!()
+        },
     };
+    
+    for m in mode.iter() {
+        m.apply_on(&mut current_perm);
+    }
+    //decode(current_perm);
+    match fs::chmod(&dest, current_perm) {
+        Ok(m) => m,
+        Err(e) => {
+            error!("error: {}", e);
+            panic!()
+        },
+    }
 }
 
 fn files_to_directory(sources : Vec<Path>, dest : Path) {
@@ -150,7 +267,7 @@ fn files_to_directory(sources : Vec<Path>, dest : Path) {
             println!("install: cannot overwrite directory ‘{}’ with non-directory", tmp_dest.display());
             continue;
         }
-        
+        //TO DO: make sure not ot overrite file with itself
         let real_dest = match realpath(&tmp_dest) {
             Ok(m) => m,
             Err(e) => {
@@ -168,11 +285,90 @@ fn files_to_directory(sources : Vec<Path>, dest : Path) {
             Ok(m) => {
                 set.insert(real_dest);
                 m
-                },
+            },
             Err(e) => {
                 error!("error: {}", e);
                 panic!()
             },
         };
     }
+}
+
+fn parse_mode(s : String) -> Vec<Action> {
+    //println!("OWNER: {}, GROUP: {}, OTHER: {}, ALL: {}", OWNER, GROUP, OTHER, User::all());
+    let mut map = HashMap::new();
+    map.insert((OWNER, READ), USER_READ);
+    map.insert((OWNER, WRITE), USER_WRITE);
+    map.insert((OWNER, EXECUTE), USER_EXECUTE);
+    map.insert((GROUP, READ), GROUP_READ);
+    map.insert((GROUP, WRITE), GROUP_WRITE);
+    map.insert((GROUP, EXECUTE), GROUP_EXECUTE);
+    map.insert((OTHER, READ), OTHER_READ);
+    map.insert((OTHER, WRITE), OTHER_WRITE);
+    map.insert((OTHER, EXECUTE), OTHER_EXECUTE);
+    
+    let mut out: Vec<Action> = Vec::new();
+    let split: Vec<&str> = s.as_slice().split(',').collect();
+    let regexp = regex!(r"^[ugoa]*[-=+][rwx]*$");
+    for i in split.iter() {
+    
+        if !regexp.is_match(i.as_slice()) {
+            error!("invalid mode ‘{}’", s);
+            panic!()
+        }
+        
+        let mut user = User::empty();
+        let mut permission = Permission::empty();
+        let re = regex!(r"[-=+]");
+        let sp: Vec<&str> = re.split(i.as_slice()).collect();
+        for c in sp[0].chars() {
+            user = user | match c {
+                'u' => OWNER,
+                'g' => GROUP,
+                'o' => OTHER,
+                'a' => User::all(),
+                _   => panic!(),
+            };
+        }
+        for c in sp[1].chars() {
+            permission = permission | match c {
+                'r' => READ,
+                'w' => WRITE,
+                'x' => EXECUTE,
+                _   => panic!(),
+            };
+        }
+        //user = user&user;
+        let mut file_permissions = FilePermission::empty();
+        
+        for &u in [OWNER, GROUP, OTHER].iter() {
+            if u & user != User::empty() {
+                for &p in [READ, WRITE, EXECUTE].iter() {
+                    if p & permission != Permission::empty() {
+                        file_permissions.insert( match map.get(&(u, p)) {
+                            Some(s) => *s,
+                            None => panic!(),
+                        }
+                        );
+                    }
+                }
+            }
+        }
+        let mut cap= match re.captures(i.as_slice()) {
+            Some(s) => s.at(0).chars(),
+            None => panic!(),
+        };
+        
+        let operator = match cap.next() {
+            Some(s) => match s {
+                '-' => Remove,
+                '=' => Set,
+                '+' => Add,
+                _   => panic!(),
+            },
+            None => panic!(),
+        };
+        out.push(Action{t: operator, p: file_permissions});
+    }
+    out
 }
