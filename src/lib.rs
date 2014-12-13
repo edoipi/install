@@ -2,8 +2,9 @@
 #![feature(macro_rules)]
 #![feature(phase)]
 
-#![allow(unused_variables)]  // only necessary while the TODOs still exist
-#![allow(unused_imports)]  // only necessary while the TODOs still exist
+#![allow(missing_copy_implementations)] //
+#![allow(unused_variables)]  // 
+#![allow(unused_imports)]  // 
 
 extern crate collections;
 extern crate getopts;
@@ -28,6 +29,7 @@ use rustc::util::fs::realpath;
 use std::io::{
     fs,
     FilePermission,
+    FileType,
     GROUP_EXECUTE,
     GROUP_READ,
     GROUP_RWX,
@@ -98,9 +100,9 @@ struct Action {
 impl Action {
     fn apply_on(&self, p: &mut FilePermission) {
         match self.t {
-            Add => p.insert(self.p),
-            Remove => p.remove(self.p),
-            Set => {
+            Type::Add => p.insert(self.p),
+            Type::Remove => p.remove(self.p),
+            Type::Set => {
                 p.remove(FilePermission::all());
                 p.insert(self.p)
             },
@@ -117,7 +119,7 @@ pub fn uumain(args: Vec<String>) -> int {
         optopt("t", "target-directory", "Specify the destination directory", ""),
         optopt("m", "mode", "Set the file mode bits for the installed file or directory to mode", ""),
     ];
-    let matches = match getopts(args.tail(), opts) {
+    let matches = match getopts(args.tail(), &opts) {
         Ok(m) => m,
         Err(e) => {
             error!("error: {}", e);
@@ -130,7 +132,9 @@ pub fn uumain(args: Vec<String>) -> int {
     let mode = match matches.opt_str("mode") {
         Some(x) => parse_mode(x),
         None => {
-            Vec::new()
+            let mut v = Vec::new();
+            v.push(Action{t: Type::Set, p: USER_RWX|GROUP_READ|GROUP_EXECUTE|OTHER_READ|OTHER_EXECUTE});
+            v
         },
     };
     /*for m in mode.iter() {
@@ -173,12 +177,12 @@ pub fn uumain(args: Vec<String>) -> int {
     };
     
     let is_dest_dir = match fs::stat(&dest) {
-        Ok(m) => m.kind == std::io::FileType::TypeDirectory,
+        Ok(m) => m.kind == std::io::FileType::Directory,
         Err(_) => false
     };
     
     if matches.opt_present("target-directory") || sources.len()>1  || is_dest_dir {
-        files_to_directory(sources, dest);
+        files_to_directory(sources, dest, mode);
     } else {
         file_to_file(sources[0].clone(), dest, mode);
     }
@@ -233,9 +237,9 @@ fn file_to_file(source: Path, dest: Path, mode: Vec<Action>) {
     }
 }
 
-fn files_to_directory(sources : Vec<Path>, dest : Path) {
+fn files_to_directory(sources : Vec<Path>, dest : Path, mode: Vec<Action>) {
     match fs::stat(&dest) {
-        Ok(m) => if m.kind!=std::io::FileType::TypeDirectory {
+        Ok(m) => if m.kind != FileType::Directory {
                 error!("failed to access ‘{}’: No such file or directory", dest.display());
                 panic!()
             },
@@ -249,7 +253,7 @@ fn files_to_directory(sources : Vec<Path>, dest : Path) {
     
     for i in range (0, sources.len()) {
         let mut stat = fs::stat(&sources[i]);
-        if stat.is_ok() && stat.unwrap().kind == std::io::FileType::TypeDirectory {
+        if stat.is_ok() && stat.unwrap().kind == FileType::Directory {
             println!("install: omitting directory ‘{}’", sources[i].display());
             continue;
         }
@@ -263,7 +267,7 @@ fn files_to_directory(sources : Vec<Path>, dest : Path) {
         });
         
         stat = fs::stat(&tmp_dest);
-        if stat.is_ok() && stat.unwrap().kind == std::io::FileType::TypeDirectory {
+        if stat.is_ok() && stat.unwrap().kind == FileType::Directory {
             println!("install: cannot overwrite directory ‘{}’ with non-directory", tmp_dest.display());
             continue;
         }
@@ -291,6 +295,25 @@ fn files_to_directory(sources : Vec<Path>, dest : Path) {
                 panic!()
             },
         };
+        
+        let mut current_perm = match fs::stat(&tmp_dest) {
+            Ok(stat) => stat.perm,
+            Err(e) => {error!("error: {}", e);
+                panic!()
+            },
+        };
+        
+        for m in mode.iter() {
+            m.apply_on(&mut current_perm);
+        }
+        //decode(current_perm);
+        match fs::chmod(&tmp_dest, current_perm) {
+            Ok(m) => m,
+            Err(e) => {
+                error!("error: {}", e);
+                panic!()
+            },
+        }
     }
 }
 
@@ -341,15 +364,15 @@ fn parse_mode(s : String) -> Vec<Action> {
         //user = user&user;
         let mut file_permissions = FilePermission::empty();
         
-        for &u in [OWNER, GROUP, OTHER].iter() {
-            if u & user != User::empty() {
-                for &p in [READ, WRITE, EXECUTE].iter() {
-                    if p & permission != Permission::empty() {
-                        file_permissions.insert( match map.get(&(u, p)) {
+        for u in [OWNER, GROUP, OTHER].iter() {
+            if *u & user != User::empty() {
+                for p in [READ, WRITE, EXECUTE].iter() {
+                    if *p & permission != Permission::empty() {
+                        //let g = (*u, *p);
+                        file_permissions.insert( match map.get(&((*u).clone(), (*p).clone())) {
                             Some(s) => *s,
                             None => panic!(),
-                        }
-                        );
+                        } );
                     }
                 }
             }
@@ -361,9 +384,9 @@ fn parse_mode(s : String) -> Vec<Action> {
         
         let operator = match cap.next() {
             Some(s) => match s {
-                '-' => Remove,
-                '=' => Set,
-                '+' => Add,
+                '-' => Type::Remove,
+                '=' => Type::Set,
+                '+' => Type::Add,
                 _   => panic!(),
             },
             None => panic!(),
