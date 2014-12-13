@@ -23,6 +23,7 @@ use getopts::{
     getopts,
     optflag,
     optopt,
+    OptGroup,
 };
 use regex::Regex;
 use rustc::util::fs::realpath;
@@ -32,11 +33,9 @@ use std::io::{
     FileType,
     GROUP_EXECUTE,
     GROUP_READ,
-    GROUP_RWX,
     GROUP_WRITE,
     OTHER_EXECUTE,
     OTHER_READ,
-    OTHER_RWX,
     OTHER_WRITE,
     USER_EXECUTE,
     USER_READ,
@@ -46,7 +45,7 @@ use std::io::{
 
 bitflags! {
     flags User: u32 {
-        const OWNER = 0x00000001,
+        const USER  = 0x00000001,
         const GROUP = 0x00000010,
         const OTHER = 0x00000100,
     }
@@ -57,32 +56,6 @@ bitflags! {
         const READ    = 0x00000001,
         const WRITE   = 0x00000010,
         const EXECUTE = 0x00000100,
-    }
-}
-
-fn decode(f: FilePermission) {
-    let mut map = HashMap::new();
-    map.insert(GROUP_EXECUTE, "GROUP_EXECUTE");
-    map.insert(GROUP_READ, "GROUP_READ");
-    map.insert(GROUP_WRITE, "GROUP_WRITE");
-    map.insert(OTHER_EXECUTE, "OTHER_EXECUTE");
-    map.insert(OTHER_READ, "OTHER_READ");
-    map.insert(OTHER_WRITE, "OTHER_WRITE");
-    map.insert(USER_EXECUTE, "USER_EXECUTE");
-    map.insert(USER_READ, "USER_READ");
-    map.insert(USER_WRITE, "USER_WRITE");
-    for &p in [GROUP_EXECUTE,
-                GROUP_READ,
-                GROUP_WRITE,
-                OTHER_EXECUTE,
-                OTHER_READ,
-                OTHER_WRITE,
-                USER_EXECUTE,
-                USER_READ,
-                USER_WRITE].iter() {
-        if f & p != FilePermission::empty() {
-            print!("{} ", map.get(&p).unwrap());
-        }
     }
 }
 
@@ -127,21 +100,17 @@ pub fn uumain(args: Vec<String>) -> int {
         },
     };
     
-    let mut free = matches.free.clone();
-    
-    let mode = match matches.opt_str("mode") {
-        Some(x) => parse_mode(x),
-        None => {
-            let mut v = Vec::new();
-            v.push(Action{t: Type::Set, p: USER_RWX|GROUP_READ|GROUP_EXECUTE|OTHER_READ|OTHER_EXECUTE});
-            v
-        },
-    };
-    /*for m in mode.iter() {
-        decode(m.p);
-        println!("");
+    if matches.opt_present("help") {
+        print_usage(&opts);
+        return 0;
     }
-    return 0;*/
+    
+    if matches.opt_present("version") {
+        print_version();
+        return 0;
+    }
+    
+    let mut free = matches.free.clone();
     
     let dest : Path = match matches.opt_str("target-directory") {
         Some(x) => Path::new(x),
@@ -176,6 +145,15 @@ pub fn uumain(args: Vec<String>) -> int {
         }
     };
     
+    let mode = match matches.opt_str("mode") {
+        Some(x) => parse_mode(x),
+        None => {
+            let mut v = Vec::new();
+            v.push(Action{t: Type::Set, p: USER_RWX|GROUP_READ|GROUP_EXECUTE|OTHER_READ|OTHER_EXECUTE});
+            v
+        },
+    };
+    
     let is_dest_dir = match fs::stat(&dest) {
         Ok(m) => m.kind == std::io::FileType::Directory,
         Err(_) => false
@@ -197,6 +175,7 @@ fn file_to_file(source: Path, dest: Path, mode: Vec<Action>) {
             panic!()
         },
     };
+    
     let real_dest = match realpath(&dest) {
         Ok(m) => m,
         Err(e) => {
@@ -204,6 +183,7 @@ fn file_to_file(source: Path, dest: Path, mode: Vec<Action>) {
             panic!()
         },
     };
+    
     if real_source==real_dest {
         error!("error: {0} and {1} are the same file", source.display(), dest.display());
         panic!()
@@ -217,17 +197,12 @@ fn file_to_file(source: Path, dest: Path, mode: Vec<Action>) {
         },
     }
     
-    let mut current_perm = match fs::stat(&dest) {
-        Ok(stat) => stat.perm,
-        Err(e) => {error!("error: {}", e);
-            panic!()
-        },
-    };
+    let mut current_perm = FilePermission::empty();
     
     for m in mode.iter() {
         m.apply_on(&mut current_perm);
     }
-    //decode(current_perm);
+    
     match fs::chmod(&dest, current_perm) {
         Ok(m) => m,
         Err(e) => {
@@ -280,6 +255,19 @@ fn files_to_directory(sources : Vec<Path>, dest : Path, mode: Vec<Action>) {
             },
         };
         
+        let real_source = match realpath(&sources[i]) {
+            Ok(m) => m,
+            Err(e) => {
+                error!("error: {}", e);
+                panic!()
+            },
+        };
+        
+        if real_source==real_dest {
+            println!("install: {0} and {1} are the same file", sources[i].display(), tmp_dest.display());
+            continue;
+        }
+        
         if set.contains(&real_dest){
             println!("install: will not overwrite just-created ‘{}’ with ‘{}’", tmp_dest.display(), sources[i].display());
             continue;
@@ -296,17 +284,12 @@ fn files_to_directory(sources : Vec<Path>, dest : Path, mode: Vec<Action>) {
             },
         };
         
-        let mut current_perm = match fs::stat(&tmp_dest) {
-            Ok(stat) => stat.perm,
-            Err(e) => {error!("error: {}", e);
-                panic!()
-            },
-        };
+        let mut current_perm = FilePermission::empty();
         
         for m in mode.iter() {
             m.apply_on(&mut current_perm);
         }
-        //decode(current_perm);
+        
         match fs::chmod(&tmp_dest, current_perm) {
             Ok(m) => m,
             Err(e) => {
@@ -318,11 +301,10 @@ fn files_to_directory(sources : Vec<Path>, dest : Path, mode: Vec<Action>) {
 }
 
 fn parse_mode(s : String) -> Vec<Action> {
-    //println!("OWNER: {}, GROUP: {}, OTHER: {}, ALL: {}", OWNER, GROUP, OTHER, User::all());
     let mut map = HashMap::new();
-    map.insert((OWNER, READ), USER_READ);
-    map.insert((OWNER, WRITE), USER_WRITE);
-    map.insert((OWNER, EXECUTE), USER_EXECUTE);
+    map.insert((USER, READ), USER_READ);
+    map.insert((USER, WRITE), USER_WRITE);
+    map.insert((USER, EXECUTE), USER_EXECUTE);
     map.insert((GROUP, READ), GROUP_READ);
     map.insert((GROUP, WRITE), GROUP_WRITE);
     map.insert((GROUP, EXECUTE), GROUP_EXECUTE);
@@ -346,7 +328,7 @@ fn parse_mode(s : String) -> Vec<Action> {
         let sp: Vec<&str> = re.split(i.as_slice()).collect();
         for c in sp[0].chars() {
             user = user | match c {
-                'u' => OWNER,
+                'u' => USER,
                 'g' => GROUP,
                 'o' => OTHER,
                 'a' => User::all(),
@@ -361,15 +343,14 @@ fn parse_mode(s : String) -> Vec<Action> {
                 _   => panic!(),
             };
         }
-        //user = user&user;
+        
         let mut file_permissions = FilePermission::empty();
         
-        for u in [OWNER, GROUP, OTHER].iter() {
-            if *u & user != User::empty() {
-                for p in [READ, WRITE, EXECUTE].iter() {
-                    if *p & permission != Permission::empty() {
-                        //let g = (*u, *p);
-                        file_permissions.insert( match map.get(&((*u).clone(), (*p).clone())) {
+        for u in vec![USER, GROUP, OTHER].into_iter() {
+            if u & user != User::empty() {
+                for p in vec![READ, WRITE, EXECUTE].into_iter() {
+                    if p & permission != Permission::empty() {
+                        file_permissions.insert( match map.get(&(u.clone(), p.clone())) {
                             Some(s) => *s,
                             None => panic!(),
                         } );
@@ -394,4 +375,17 @@ fn parse_mode(s : String) -> Vec<Action> {
         out.push(Action{t: operator, p: file_permissions});
     }
     out
+}
+
+fn print_usage(opts: &[OptGroup]) {
+    let msg = format!("Usage: install [OPTION]... [-T] SOURCE DEST
+  or:  install [OPTION]... SOURCE... DIRECTORY
+  or:  install [OPTION]... -t DIRECTORY SOURCE...
+  or:  install [OPTION]... -d DIRECTORY...
+    ");
+    println!("{}",  getopts::usage(msg.as_slice(), opts));
+}
+
+fn print_version() {
+	println!("install version 1.0.0");
 }
