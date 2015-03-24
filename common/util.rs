@@ -16,7 +16,7 @@ macro_rules! show_error(
     })
 );
 
-#[macro_export]
+/*#[macro_export]
 macro_rules! show_warning(
     ($($args:tt)+) => ({
         pipe_write!(&mut ::std::old_io::stderr(), "{}: warning: ", ::NAME);
@@ -40,7 +40,7 @@ macro_rules! eprint(
 #[macro_export]
 macro_rules! eprintln(
     ($($args:tt)+) => (pipe_writeln!(&mut ::std::old_io::stderr(), $($args)+))
-);
+);*/
 
 #[macro_export]
 macro_rules! crash(
@@ -50,7 +50,7 @@ macro_rules! crash(
     })
 );
 
-#[macro_export]
+/*#[macro_export]
 macro_rules! exit(
     ($exitcode:expr) => ({
         unsafe { ::util::libc::exit($exitcode); }
@@ -174,4 +174,4 @@ macro_rules! safe_unwrap(
             Err(f) => crash!(1, "{}", f.to_string())
         }
     )
-);
+);*/
