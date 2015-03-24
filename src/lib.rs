@@ -19,7 +19,6 @@
 extern crate collections;
 extern crate getopts;
 extern crate regex;
-extern crate regex_macros;
 extern crate log;
 
  
