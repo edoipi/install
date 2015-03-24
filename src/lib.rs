@@ -33,7 +33,7 @@ use getopts::{
     optopt,
     OptGroup,
 };
-use std::{
+use std::old_io::{
     fs,
     FilePermission,
     FileType,
