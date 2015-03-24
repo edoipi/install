@@ -48,6 +48,7 @@ use std::old_io::{
     USER_RWX,
     USER_WRITE,
 };
+use std::old_path::Path;
 #[path = "../common/util.rs"]
 #[macro_use]
 mod util;
