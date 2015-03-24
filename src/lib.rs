@@ -272,7 +272,7 @@ fn parse_mode(s : String) -> FilePermission {
         
         let mut user = User::empty();
         let mut permission = Permission::empty();
-        let re = regex!(r"[-=+]");//////////////////////////////////tutaj
+        let re = regex(r"[-=+]").unwrap();//////////////////////////////////tutaj
         let sp: Vec<&str> = re.split(i.as_slice()).collect();
         for c in sp[0].chars() {
             user = user | match c {
