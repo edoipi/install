@@ -1,6 +1,9 @@
 #![crate_name = "install"]
 #![feature(macro_rules)]
-#![feature(phase)]
+#![feature(plugin)]
+#![allow(missing_copy_implementations)] //to be removed in later stage
+#![allow(unused_variables)]  //to be removed in later stage 
+/*#![feature(phase)]*/
 
 /*
  * This file is part of the uutils coreutils package.
@@ -11,15 +14,15 @@
  * that was distributed with this source code.
  */
 
-#![allow(missing_copy_implementations)] //to be removed in later stage
-#![allow(unused_variables)]  //to be removed in later stage 
 
+#[macro_use] extern crate rustc_bitflags;
 extern crate collections;
 extern crate getopts;
-#[phase(plugin, link)] extern crate log;
 extern crate regex;
-#[phase(plugin)] extern crate regex_macros;
+extern crate regex_macros;
+extern crate log;
 
+ 
 use std::os::make_absolute;
 use std::collections::HashSet;
 use std::collections::HashMap;
@@ -260,7 +263,7 @@ fn parse_mode(s : String) -> FilePermission {
     
     let mut out = FilePermission::empty();
     let split: Vec<&str> = s.as_slice().split(',').collect();
-    let regexp = regex!(r"^[ugoa]*[-=+][rwx]*$");
+    let regexp = regex(r"^[ugoa]*[-=+][rwx]*$").unwrap(); /////////////////////tutaj
     for i in split.iter() {
     
         if !regexp.is_match(i.as_slice()) {
@@ -269,7 +272,7 @@ fn parse_mode(s : String) -> FilePermission {
         
         let mut user = User::empty();
         let mut permission = Permission::empty();
-        let re = regex!(r"[-=+]");
+        let re = regex!(r"[-=+]");//////////////////////////////////tutaj
         let sp: Vec<&str> = re.split(i.as_slice()).collect();
         for c in sp[0].chars() {
             user = user | match c {
