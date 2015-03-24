@@ -49,9 +49,8 @@ use std::old_io::{
     USER_WRITE,
 };
 #[path = "../common/util.rs"]
+#[macro_use]
 mod util;
-use util::show_error;
-use util::crash;
 
 static NAME: &'static str = "install";
 
