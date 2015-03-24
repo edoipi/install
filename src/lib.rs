@@ -50,6 +50,8 @@ use std::old_io::{
 };
 #[path = "../common/util.rs"]
 mod util;
+use util::show_error;
+use util::crash;
 
 static NAME: &'static str = "install";
 
