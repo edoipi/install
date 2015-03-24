@@ -139,7 +139,7 @@ pub fn uumain(args: Vec<String>) -> int {
         return 1;
     } else {
         let mut tmp : Vec<Path> = Vec::new();
-        for i in range(0, free.len()) {
+        for i in 0..free.len() {
             if fs::stat(&Path::new(free[i].clone())).is_err() {
                 show_error!("cannot stat ‘{}’: No such file or directory", free[i]);
                 return 1;
@@ -155,7 +155,7 @@ pub fn uumain(args: Vec<String>) -> int {
     };
     
     let is_dest_dir = match fs::stat(&dest) {
-        Ok(m) => m.kind == std::io::FileType::Directory,
+        Ok(m) => m.kind == FileType::Directory,
         Err(_) => false
     };
     
@@ -201,7 +201,7 @@ fn files_to_directory(sources : Vec<Path>, dest : Path, mode: FilePermission) {
     
     let mut set = HashSet::new();
     
-    for i in range(0, sources.len()) {
+    for i in 0..sources.len() {
         let mut stat = fs::stat(&sources[i]);
         if stat.is_ok() && stat.unwrap().kind == FileType::Directory {
             println!("install: omitting directory ‘{}’", sources[i].display());
