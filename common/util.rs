@@ -6,9 +6,9 @@
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
  */
-
+#[macro_use]
 extern crate libc;
-
+//#[macro_use]
 macro_rules! show_error(
     ($($args:tt)+) => ({
         pipe_write!(&mut ::std::old_io::stderr(), "{}: error: ", ::NAME);
