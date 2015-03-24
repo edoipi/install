@@ -21,7 +21,8 @@ extern crate getopts;
 extern crate regex;
 extern crate log;
 
- 
+
+use regex::Regex;
 use std::os::make_absolute;
 use std::collections::HashSet;
 use std::collections::HashMap;
@@ -264,7 +265,7 @@ fn parse_mode(s : String) -> FilePermission {
     
     let mut out = FilePermission::empty();
     let split: Vec<&str> = s.as_slice().split(',').collect();
-    let regexp = regex(r"^[ugoa]*[-=+][rwx]*$").unwrap(); /////////////////////tutaj
+    let regexp = Regex::new(r"^[ugoa]*[-=+][rwx]*$").unwrap(); /////////////////////tutaj
     for i in split.iter() {
     
         if !regexp.is_match(i.as_slice()) {
@@ -273,7 +274,7 @@ fn parse_mode(s : String) -> FilePermission {
         
         let mut user = User::empty();
         let mut permission = Permission::empty();
-        let re = regex(r"[-=+]").unwrap();//////////////////////////////////tutaj
+        let re = Regex::new(r"[-=+]").unwrap();//////////////////////////////////tutaj
         let sp: Vec<&str> = re.split(i.as_slice()).collect();
         for c in sp[0].chars() {
             user = user | match c {
