@@ -3,6 +3,9 @@
 #![feature(plugin)]
 #![allow(missing_copy_implementations)] //to be removed in later stage
 #![allow(unused_variables)]  //to be removed in later stage 
+#![feature(rustc_private)]
+#![feature(collections)]
+#![feature(associated_consts)]
 /*#![feature(phase)]*/
 
 /*
@@ -20,21 +23,26 @@ extern crate collections;
 extern crate getopts;
 extern crate regex;
 extern crate log;
+extern crate rustc;
 
-
+use std::boxed::Box;
+use std::borrow::ToOwned;
 use regex::Regex;
-use std::os::make_absolute;
+//use std::os::make_absolute;
+//use rustc::util::fs::realpath;
 use std::collections::HashSet;
 use std::collections::HashMap;
 use collections::string::String;
 use collections::vec::Vec;
+use getopts::Options;
 use getopts::{
-    getopts,
-    optflag,
-    optopt,
-    OptGroup,
+    //getopts,
+    //optflag,
+    //optopt,
+    //OptGroup,
 };
-use std::old_io::{
+use std::fs;
+use std::io;/*::{
     fs,
     FilePermission,
     FileType,
@@ -48,8 +56,8 @@ use std::old_io::{
     USER_READ,
     USER_RWX,
     USER_WRITE,
-};
-use std::old_path::Path;
+};*/
+use std::path::Path;
 #[path = "../common/util.rs"]
 #[macro_use]
 mod util;
@@ -78,7 +86,7 @@ enum Type {
     Set,
 }
 
-struct Action {
+/*struct Action {
     t: Type,
     p: FilePermission,
 }
@@ -94,106 +102,125 @@ impl Action {
             },
         }
     }
-}
+}*/
 
-pub fn uumain(args: Vec<String>) -> int {
+pub fn uumain(args: Vec<String>) -> i32 {
+    //println!("{}", args.len());
     let program = args[0].clone();
-    let opts = [
-        optflag("h", "help", "display this help and exit"),
-        optflag("v", "version", "output version information and exit"),
-        optopt("t", "target-directory", "Specify the destination directory", ""),
-        optopt("m", "mode", "Set the file mode bits for the installed file or directory to mode", ""),
-    ];
-    let matches = match getopts(args.tail(), &opts) {
+    let mut opts = Options::new();
+    //println!("{}", args.len());
+    //let opts = [
+    opts.optflag("h", "help", "display this help and exit");
+    opts.optflag("v", "version", "output version information and exit");
+    opts.optopt("t", "target-directory", "Specify the destination directory", "");
+    opts.optopt("m", "mode", "Set the file mode bits for the installed file or directory to mode", "");
+    //];
+    let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
         Err(e) => {
-            crash!(1, "{}", e);
+            //crash!(1, "{}", e);
+            panic!(e.to_string());
         },
     };
-    
+    //println!("{}", args.len());
     if matches.opt_present("help") {
-        print_usage(&opts);
+        print_usage(opts);
         return 0;
     }
-    
+    //println!("{}", args.len());
     if matches.opt_present("version") {
         print_version();
         return 0;
     }
-    
+    //println!("{}", args.len());
     let mut free = matches.free.clone();
     
-    let dest: Path = match matches.opt_str("target-directory") {
-        Some(x) => Path::new(x),
+    let dest_str: String = match matches.opt_str("target-directory") {
+        Some(x) => x.to_owned(),
         None => {
             if free.len() <= 1 {
                 show_error!("Missing TARGET argument.  Try --help.");
                 return 1;
             } else {
                 let tmp = free.pop();
-                Path::new(tmp.unwrap())
+                tmp.unwrap()
             }
         },
     };
-    let sources: Vec<Path> = if free.len() <= 0 {
+    println!("{}", args.len());
+    let dest = Path::new(&dest_str);
+    let sources: Vec<Box<&Path>> = if free.len() <= 0 {
+        println!("Missing SOURCE argument. Try --help.");
         show_error!("Missing SOURCE argument. Try --help.");
         return 1;
     } else {
-        let mut tmp : Vec<Path> = Vec::new();
+        let mut tmp : Vec<Box<&Path>> = Vec::new();
         for i in 0..free.len() {
-            if fs::stat(&Path::new(free[i].clone())).is_err() {
+            if fs::metadata(Path::new(&free[i].clone())).is_err() {
+                println!("cannot stat ‘{}’: No such file or directory {}", free[i], fs::metadata(Path::new(&free[i].clone())).is_err());
                 show_error!("cannot stat ‘{}’: No such file or directory", free[i]);
                 return 1;
             }
-            tmp.push(Path::new(free[i].clone()));
+            let boxer = Box::new(Path::new(&free[i]));
+            tmp.push(boxer);
         }
         tmp
     };
+    //println!("{}", args.len());
+    println!("ble {}", dest.display());
     
     let mode = match matches.opt_str("mode") {
         Some(x) => parse_mode(x),
-        None => USER_RWX | GROUP_READ | GROUP_EXECUTE | OTHER_READ | OTHER_EXECUTE,
+        None => 755,
     };
     
-    let is_dest_dir = match fs::stat(&dest) {
-        Ok(m) => m.kind == FileType::Directory,
+    let is_dest_dir = match fs::metadata(&dest) {
+        Ok(m) => m.is_dir(),
         Err(_) => false
     };
     
     if matches.opt_present("target-directory") || sources.len() > 1  || is_dest_dir {
+        println!("many files");
         files_to_directory(sources, dest, mode);
     } else {
-        file_to_file(sources[0].clone(), dest, mode);
+        println!("one file {} {}", *sources[0].display(), dest.display());
+        file_to_file(&*sources[0], dest, mode);
     }
     0
 }
 
-fn file_to_file(source: Path, dest: Path, mode: FilePermission) {
-    let (real_source, real_dest) = real(&source, &dest);
+fn file_to_file(source: &Path, dest: &Path, mode: i32) {
+    let (real_source, real_dest) = real(source, dest);
     
     if real_source == real_dest {
         crash!(1, "{0} and {1} are the same file", source.display(), dest.display());
     }
     
-    match fs::copy(&source, &dest) {
-        Ok(m) => m,
+    //fs::copy(source, dest);
+    match fs::copy(source, dest) {
+        Ok(_) => (),
         Err(e) => {
-            crash!(1, "{}", e);
+            //crash!(1, "{}", e);
+            panic!(e.to_string());
         },
     }
     
-    match fs::chmod(&dest, mode) {
+    /*match fs::set_permissions(&dest, mode) {
         Ok(m) => m,
         Err(e) => {
-            crash!(1, "{}", e);
+            //crash!(1, "{}", e);
+            panic!(e.to_string());
         },
-    }
+    }*/
 }
 
-fn files_to_directory(sources : Vec<Path>, dest : Path, mode: FilePermission) {
-    match fs::stat(&dest) {
-        Ok(m) => if m.kind != FileType::Directory {
-            crash!(1, "failed to access ‘{}’: No such file or directory", dest.display());
+fn files_to_directory(sources : Vec<Box<&Path>>, dest : &Path, mode: i32) {
+    //let sources=Vec::new();
+    //let dest=Path::new();
+    //let mode=722;
+    match fs::metadata(&dest) {
+        Ok(m) => if !m.is_dir() {
+            crash!(1, "failed to access ‘{}’: No such file or directory", dest.to_str());
         },
         Err(_) => {
             crash!(1, "target ‘{}’ is not a directory", dest.display());
@@ -203,56 +230,58 @@ fn files_to_directory(sources : Vec<Path>, dest : Path, mode: FilePermission) {
     let mut set = HashSet::new();
     
     for i in 0..sources.len() {
-        let mut stat = fs::stat(&sources[i]);
-        if stat.is_ok() && stat.unwrap().kind == FileType::Directory {
+        let mut stat = fs::metadata(&*sources[i]);
+        if stat.is_ok() && stat.unwrap().is_dir() {
             println!("install: omitting directory ‘{}’", sources[i].display());
             continue;
         }
-        let mut tmp_dest = dest.clone();
-        tmp_dest.push(match sources[i].filename_str() {
+        let mut tmp_dest_buf = dest.to_path_buf().clone().to_owned();
+        tmp_dest_buf.push(match sources[i].file_name() {
             Some(m) => m,
             None => unreachable!(),
         });
-        
-        stat = fs::stat(&tmp_dest);
-        if stat.is_ok() && stat.unwrap().kind == FileType::Directory {
+        let mut tmp_dest : &Path = tmp_dest_buf.as_path();
+        stat = fs::metadata(&tmp_dest);
+        if stat.is_ok() && stat.unwrap().is_dir() {
             println!("install: cannot overwrite directory ‘{}’ with non-directory", tmp_dest.display());
             continue;
         }
+        //let tmp_dest_clone = tmp_dest.clone();
+        let (real_source, real_dest) = /*real(&tmp_dest_clone, &*sources[i]);*/ (&tmp_dest, &*sources[i]);
         
-        let (real_source, real_dest) = real(&tmp_dest, &sources[i]);
-        
-        if real_source == real_dest {
+        /*if real_source == real_dest {
             println!("install: {0} and {1} are the same file", sources[i].display(), tmp_dest.display());
             continue;
-        }
+        }*/
         
         if set.contains(&real_dest){
             println!("install: will not overwrite just-created ‘{}’ with ‘{}’", tmp_dest.display(), sources[i].display());
             continue;
         }
         
-        match fs::copy(&sources[i], &tmp_dest) {
+        match fs::copy(&*sources[i], &*tmp_dest) {
             Ok(m) => {
                 set.insert(real_dest);
                 m
             },
             Err(e) => {
-                crash!(1, "{}", e);
+                //crash!(1, "{}", e);
+                panic!(e.to_string());
             },
         };
         
-        match fs::chmod(&tmp_dest, mode) {
+        /*match fs::set_permissions(&tmp_dest, mode) {
             Ok(m) => m,
             Err(e) => {
-                crash!(1, "{}", e);
+                //crash!(1, "{}", e);
+                panic!(e.to_string());
             },
-        }
+        }*/
     }
 }
 
-fn parse_mode(s : String) -> FilePermission {
-    let mut map = HashMap::new();
+fn parse_mode(s : String) -> i32 {
+    /*let mut map = HashMap::new();
     map.insert((USER, READ), USER_READ);
     map.insert((USER, WRITE), USER_WRITE);
     map.insert((USER, EXECUTE), USER_EXECUTE);
@@ -323,34 +352,34 @@ fn parse_mode(s : String) -> FilePermission {
         
         let action = Action{ t: operator, p: file_permissions };
         action.apply_on(&mut out);
-    }
-    out
+    }*/
+    755
 }
 
-fn real(source: &Path, dest: &Path) -> (Path, Path) {
-    let real_source = match make_absolute(source) {
+fn real<'r>(source: &'r Path, dest: &'r Path) -> (&'r Path, &'r Path) {
+    let real_source = source/*match make_absolute(source) {
         Ok(m) => m,
         Err(e) => {
             crash!(1, "{}", e);
         },
-    };
+    }*/;
     
-    let real_dest = match make_absolute(dest) {
+    let real_dest = dest/*match make_absolute(dest) {
         Ok(m) => m,
         Err(e) => {
             crash!(1, "{}", e);
         },
-    };
+    }*/;
     (real_source, real_dest)
 }
 
-fn print_usage(opts: &[OptGroup]) {
+fn print_usage(opts: Options) {
     let msg = format!("Usage: install [OPTION]... [-T] SOURCE DEST
   or:  install [OPTION]... SOURCE... DIRECTORY
   or:  install [OPTION]... -t DIRECTORY SOURCE...
   or:  install [OPTION]... -d DIRECTORY...
     ");
-    println!("{}",  getopts::usage(msg.as_slice(), opts));
+    println!("{}",  opts.usage(&msg));
 }
 
 fn print_version() {

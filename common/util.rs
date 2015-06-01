@@ -6,13 +6,14 @@
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
  */
-#[macro_use]
-extern crate libc;
 //#[macro_use]
+//extern crate libc;
+//#[macro_use]
+
 macro_rules! show_error(
     ($($args:tt)+) => ({
-        pipe_write!(&mut ::std::old_io::stderr(), "{}: error: ", ::NAME);
-        pipe_writeln!(&mut ::std::old_io::stderr(), $($args)+);
+        //pipe_write!(&mut ::std::old_io::stderr(), "{}: error: ", ::NAME);
+        //pipe_writeln!(&mut ::std::old_io::stderr(), $($args)+);
     })
 );
 
@@ -45,8 +46,8 @@ macro_rules! eprintln(
 #[macro_export]
 macro_rules! crash(
     ($exitcode:expr, $($args:tt)+) => ({
-        show_error!($($args)+);
-        unsafe { ::util::libc::exit($exitcode as ::util::libc::c_int); }
+        //show_error!($($args)+);
+       // unsafe { ::util::libc::exit($exitcode as ::util::libc::c_int); }
     })
 );
 

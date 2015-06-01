@@ -6,3 +6,5 @@ authors = ["edoipi <implicent@gmail.com>"]
 
 [dependencies]
 regex = "*"
+regex_macros = "*"
+getopts = "0.2.10"
