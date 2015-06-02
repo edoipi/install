@@ -25,6 +25,9 @@ extern crate regex;
 extern crate log;
 extern crate rustc;
 
+use std::env::current_dir;
+use std::ffi::OsString;
+use std::path::PathBuf;
 use std::boxed::Box;
 use std::borrow::ToOwned;
 use regex::Regex;
@@ -105,16 +108,14 @@ impl Action {
 }*/
 
 pub fn uumain(args: Vec<String>) -> i32 {
-    //println!("{}", args.len());
     let program = args[0].clone();
     let mut opts = Options::new();
-    //println!("{}", args.len());
-    //let opts = [
+    
     opts.optflag("h", "help", "display this help and exit");
     opts.optflag("v", "version", "output version information and exit");
     opts.optopt("t", "target-directory", "Specify the destination directory", "");
     opts.optopt("m", "mode", "Set the file mode bits for the installed file or directory to mode", "");
-    //];
+    
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
         Err(e) => {
@@ -122,17 +123,17 @@ pub fn uumain(args: Vec<String>) -> i32 {
             panic!(e.to_string());
         },
     };
-    //println!("{}", args.len());
+    
     if matches.opt_present("help") {
         print_usage(opts);
         return 0;
     }
-    //println!("{}", args.len());
+    
     if matches.opt_present("version") {
         print_version();
         return 0;
     }
-    //println!("{}", args.len());
+    
     let mut free = matches.free.clone();
     
     let dest_str: String = match matches.opt_str("target-directory") {
@@ -147,7 +148,7 @@ pub fn uumain(args: Vec<String>) -> i32 {
             }
         },
     };
-    println!("{}", args.len());
+
     let dest = Path::new(&dest_str);
     let sources: Vec<Box<&Path>> = if free.len() <= 0 {
         println!("Missing SOURCE argument. Try --help.");
@@ -166,8 +167,6 @@ pub fn uumain(args: Vec<String>) -> i32 {
         }
         tmp
     };
-    //println!("{}", args.len());
-    println!("ble {}", dest.display());
     
     let mode = match matches.opt_str("mode") {
         Some(x) => parse_mode(x),
@@ -179,24 +178,30 @@ pub fn uumain(args: Vec<String>) -> i32 {
         Err(_) => false
     };
     
+    println!("is dest dir {}", is_dest_dir);
+    
     if matches.opt_present("target-directory") || sources.len() > 1  || is_dest_dir {
         println!("many files");
         files_to_directory(sources, dest, mode);
     } else {
-        println!("one file {} {}", *sources[0].display(), dest.display());
+        println!("one file {} {}", (*sources[0]).display(), dest.display());
         file_to_file(&*sources[0], dest, mode);
     }
     0
 }
 
 fn file_to_file(source: &Path, dest: &Path, mode: i32) {
-    let (real_source, real_dest) = real(source, dest);
+    let real_source = real(source);
+    let real_dest = real(dest);
+    
+    println!("realll {:?} {:?} {}", real_source, real_dest, real_source==real_dest);
     
     if real_source == real_dest {
-        crash!(1, "{0} and {1} are the same file", source.display(), dest.display());
+        println!("{0} and {1} are the same file", source.display(), dest.display());
+        panic!();
+        //crash!(1, "{0} and {1} are the same file", source.display(), dest.display());
     }
     
-    //fs::copy(source, dest);
     match fs::copy(source, dest) {
         Ok(_) => (),
         Err(e) => {
@@ -215,9 +220,6 @@ fn file_to_file(source: &Path, dest: &Path, mode: i32) {
 }
 
 fn files_to_directory(sources : Vec<Box<&Path>>, dest : &Path, mode: i32) {
-    //let sources=Vec::new();
-    //let dest=Path::new();
-    //let mode=722;
     match fs::metadata(&dest) {
         Ok(m) => if !m.is_dir() {
             crash!(1, "failed to access ‘{}’: No such file or directory", dest.to_str());
@@ -246,13 +248,16 @@ fn files_to_directory(sources : Vec<Box<&Path>>, dest : &Path, mode: i32) {
             println!("install: cannot overwrite directory ‘{}’ with non-directory", tmp_dest.display());
             continue;
         }
-        //let tmp_dest_clone = tmp_dest.clone();
-        let (real_source, real_dest) = /*real(&tmp_dest_clone, &*sources[i]);*/ (&tmp_dest, &*sources[i]);
         
-        /*if real_source == real_dest {
+        let real_source = real(&tmp_dest);
+        let real_dest = real(&*sources[i]);
+        
+        println!("realll  {:?}   {:?}", real_source, real_dest);
+        
+        if real_source == real_dest {
             println!("install: {0} and {1} are the same file", sources[i].display(), tmp_dest.display());
             continue;
-        }*/
+        }
         
         if set.contains(&real_dest){
             println!("install: will not overwrite just-created ‘{}’ with ‘{}’", tmp_dest.display(), sources[i].display());
@@ -356,21 +361,24 @@ fn parse_mode(s : String) -> i32 {
     755
 }
 
-fn real<'r>(source: &'r Path, dest: &'r Path) -> (&'r Path, &'r Path) {
-    let real_source = source/*match make_absolute(source) {
-        Ok(m) => m,
-        Err(e) => {
-            crash!(1, "{}", e);
-        },
-    }*/;
+fn real(path: & Path) -> Box<PathBuf> {
+    let mut real_path = current_dir().unwrap();
     
-    let real_dest = dest/*match make_absolute(dest) {
-        Ok(m) => m,
-        Err(e) => {
-            crash!(1, "{}", e);
-        },
-    }*/;
-    (real_source, real_dest)
+    for component in path.components() {
+    	let mut real_path_clone = real_path.clone();
+    	real_path_clone.push(component.as_os_str());
+    	
+    	let next : OsString = match fs::read_link(&real_path_clone) {
+    	    Ok(m) => {  println!("here");
+    	                m.file_name().unwrap().to_owned()},
+    	    Err(e) => (*component.as_os_str()).to_os_string()  
+    	};
+    	real_path.push(next);
+    	println!("pav {} {}", real_path.display(), real_path_clone.display());
+    }
+
+    let bbox = Box::new(Path::new(real_path.as_path()).to_owned());
+    bbox
 }
 
 fn print_usage(opts: Options) {
